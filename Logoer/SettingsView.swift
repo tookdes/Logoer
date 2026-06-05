@@ -22,20 +22,20 @@ struct SettingsView: View {
     @AppStorage("maskMode") var maskMode: Bool = false
     @AppStorage("shadowON") var shadowON: Bool = false
     @State private var importing = false
-    
+
     var body: some View {
         VStack {
             HStack {
                 Spacer()
                 Toggle("Launch at Login", isOn: $launchAtLogin)
                     .toggleStyle(.switch)
-                    .onChange(of: launchAtLogin) { newValue in
+                    .onChange(of: launchAtLogin) { _, newValue in
                         SMLoginItemSetEnabled("com.lihaoyun6.LogoerHelper" as CFString, newValue)
                     }
                 Spacer()
                 Toggle("Always on Screen", isOn: $pinOnScreen)
                     .toggleStyle(.switch)
-                    .onChange(of: pinOnScreen) { newValue in createLogo() }
+                    .onChange(of: pinOnScreen) { _, _ in createLogo() }
                 Spacer()
             }
             Divider()
@@ -51,7 +51,7 @@ struct SettingsView: View {
                     Text("*Custom Emoji").tag("emoji")
                     Text("*Custom Image").tag("custom")
                 }
-                .onChange(of: logoStyle) { _ in createLogo() }
+                .onChange(of: logoStyle) { _, _ in createLogo() }
                 if logoStyle == "color" {
                     ColorPicker("", selection: $userColor)
                 } else if logoStyle == "battery" {
@@ -66,7 +66,7 @@ struct SettingsView: View {
                     Button("Random") { userEmoji = randomEmoji(full: maskMode) }
                     TextField("", text: $userEmoji)
                         .frame(width: 30)
-                        .onChange(of: userEmoji) { newValue in
+                        .onChange(of: userEmoji) { _, newValue in
                             if newValue.count > 1 { userEmoji = String(newValue.first ?? "🍎") }
                             createLogo()
                         }
@@ -76,7 +76,8 @@ struct SettingsView: View {
                             switch result {
                             case .success(let file):
                                 let url = file.absoluteURL
-                                _ = url.startAccessingSecurityScopedResource()
+                                guard url.startAccessingSecurityScopedResource() else { return }
+                                defer { url.stopAccessingSecurityScopedResource() }
                                 let fileManager = FileManager.default
                                 let sandboxURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
                                 let destinationURL = sandboxURL.appendingPathComponent("user.\(url.pathExtension)")
@@ -90,7 +91,6 @@ struct SettingsView: View {
                                 } catch {
                                     print(error.localizedDescription)
                                 }
-                                url.stopAccessingSecurityScopedResource()
                             case .failure(let error):
                                 print(error.localizedDescription)
                             }
@@ -104,7 +104,7 @@ struct SettingsView: View {
                 HStack(spacing: 2) {
                     Toggle("Auto-Mask", isOn: $maskMode)
                         .toggleStyle(.checkbox)
-                        .onChange(of: maskMode) { newValue in if newValue { refeshMask() }}
+                        .onChange(of: maskMode) { _, newValue in if newValue { refeshMask() }}
                     SWInfoButton(showOnHover: false, fillMode: true, animatePopover: true, content: "Automatically capture the color of the menu bar and cover the system default Logo.".local, primaryColor: NSColor.controlAccentColor)
                         .frame(width: 19, height: 19)
                 }
@@ -112,7 +112,7 @@ struct SettingsView: View {
                     Text("Refresh the mask every")
                         .foregroundColor(maskMode ? .primary : .secondary.opacity(0.5))
                     TextField("", value: $maskInterval, formatter: NumberFormatter())
-                        .onChange(of: maskInterval) { newValue in if newValue < 1 { maskInterval = 1 }}
+                        .onChange(of: maskInterval) { _, newValue in if newValue < 1 { maskInterval = 1 }}
                         .disabled(!maskMode)
                         .frame(width: 25)
                     Text("s")
@@ -172,10 +172,13 @@ extension Color: @retroactive RawRepresentable {
 
     public init?(rawValue: String) {
         let components = rawValue.components(separatedBy: ",")
-        let r = Double(components[0]) ?? .zero
-        let g = Double(components[1]) ?? .zero
-        let b = Double(components[2]) ?? .zero
-        let o = Double(components[3]) ?? .zero
+        guard components.count >= 4,
+              let r = Double(components[0]),
+              let g = Double(components[1]),
+              let b = Double(components[2]),
+              let o = Double(components[3]) else {
+            return nil
+        }
         self = .init(.sRGB, red: r, green: g, blue: b, opacity: o)
     }
 

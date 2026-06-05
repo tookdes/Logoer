@@ -31,13 +31,13 @@ struct ContentView: View {
     @AppStorage("logoStyle") var logoStyle = "rainbow"
     @AppStorage("userImage") var userImage: URL = URL(fileURLWithPath: "/")
     @ObservedObject var model: DataModel
-    var screen: NSScreen!
-    var maskURL: URL!
-    
+    let screen: NSScreen
+    let maskURL: URL
+    @State private var cachedCustomImage: NSImage?
+
     var body: some View {
         ZStack {
-            //Color.clear
-            if let image = model.masks.first(where: { $0.url == maskURL })?.image, maskMode  {
+            if let image = model.masks.first(where: { $0.url.path == maskURL.path })?.image, maskMode  {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
@@ -113,7 +113,7 @@ struct ContentView: View {
                                     .scaledToFit()
                                     .foregroundColor(Color(model.battery.levelColor))
                                     .frame(width: 16, height: 17)
-                                    
+
                             }
                             .mask (
                                 VStack {
@@ -202,8 +202,8 @@ struct ContentView: View {
                                     .resizable()
                                     .scaledToFit()
                             } else {
-                                if let i = NSImage(contentsOf: userImage) {
-                                    Image(nsImage: i)
+                                if let img = cachedCustomImage {
+                                    Image(nsImage: img)
                                         .interpolation(.high)
                                         .resizable()
                                         .scaledToFit()
@@ -215,6 +215,8 @@ struct ContentView: View {
                     .offset(y: screen.hasTopNotchDesign ? 0.5 : -0.5)
                     .needOffset(x: -0.5, y: -0.5)
                     .shadow(color: Color.black.opacity(shadowON ? 0.3 : 0.0), radius: 1.5, y: 1.5)
+                    .onAppear { loadCustomImage() }
+                    .onChange(of: userImage) { _, _ in loadCustomImage() }
                 } else {
                     Image(logoStyle + (aboveSonoma ? "" : "_old"))
                         .interpolation(.high)
@@ -228,6 +230,14 @@ struct ContentView: View {
         }
         .opacity((model.fullScreens.contains(screen.frame) && !pinOnScreen) ? 0 : 1)
         .frame(width: 24, height: 24)
+    }
+
+    private func loadCustomImage() {
+        guard userImage != URL(fileURLWithPath: "/"), userImage.pathExtension != "gif" else {
+            cachedCustomImage = nil
+            return
+        }
+        cachedCustomImage = NSImage(contentsOf: userImage)
     }
 }
 

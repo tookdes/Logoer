@@ -32,7 +32,9 @@ open class InfoButton: NSControl, NSPopoverDelegate {
                     popover = NSPopover(content: self.content, doesAnimate: self.animatePopover)
                 }
                 if mouseInside {
-                    popover.show(relativeTo: self.frame, of: self.superview!, preferredEdge: self.preferredEdge)
+                    if let parent = self.superview {
+                        popover.show(relativeTo: self.frame, of: parent, preferredEdge: self.preferredEdge)
+                    }
                 } else {
                     popover.close()
                 }
@@ -53,7 +55,7 @@ open class InfoButton: NSControl, NSPopoverDelegate {
     fileprivate var stringAttributeDict = [NSAttributedString.Key: Any]()
     fileprivate var circlePath: NSBezierPath!
 
-    var popover: NSPopover!
+    var popover: NSPopover?
 
     required public init?(coder: NSCoder) {
         super.init(coder: coder)
@@ -71,7 +73,7 @@ open class InfoButton: NSControl, NSPopoverDelegate {
 
     override open func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        
+
         self.mainSize = min(self.bounds.size.width, self.bounds.size.height)
         stringAttributeDict[.font] = NSFont.systemFont(ofSize: mainSize * 0.6)
 
@@ -100,10 +102,12 @@ open class InfoButton: NSControl, NSPopoverDelegate {
         if popover == nil {
             popover = NSPopover(content: self.content, doesAnimate: self.animatePopover)
         }
-        if popover.isShown {
-            popover.close()
+        if popover!.isShown {
+            popover!.close()
         } else {
-            popover.show(relativeTo: self.frame, of: self.superview!, preferredEdge: self.preferredEdge)
+            if let parent = self.superview {
+                popover!.show(relativeTo: self.frame, of: parent, preferredEdge: self.preferredEdge)
+            }
         }
     }
 
@@ -119,7 +123,7 @@ extension NSPopover {
         self.animates = doesAnimate
         self.contentViewController = NSViewController()
         self.contentViewController!.view = NSView(frame: .zero)
-        
+
         let popoverMargin = CGFloat(20)
         let textField: NSTextField = {
             let textField = NSTextField(frame: .zero)
@@ -131,25 +135,13 @@ extension NSPopover {
             textField.frame.origin = NSMakePoint(popoverMargin, popoverMargin)
             return textField
         }()
-        
+
         self.contentViewController!.view.addSubview(textField)
         var viewSize = textField.frame.size
         viewSize.width += popoverMargin * 2
         viewSize.height += popoverMargin * 2
         self.contentSize = viewSize
     }
-}
-//NSMinXEdge NSMinYEdge NSMaxXEdge NSMaxYEdge
-
-// Helper function inserted by Swift 4.2 migrator.
-fileprivate func convertFromNSAttributedStringKey(_ input: NSAttributedString.Key) -> String {
-    return input.rawValue
-}
-
-// Helper function inserted by Swift 4.2 migrator.
-fileprivate func convertToOptionalNSAttributedStringKeyDictionary(_ input: [String: Any]?) -> [NSAttributedString.Key: Any]? {
-    guard let input = input else { return nil }
-    return Dictionary(uniqueKeysWithValues: input.map { key, value in (NSAttributedString.Key(rawValue: key), value)})
 }
 
 struct SWInfoButton: NSViewRepresentable {
@@ -172,10 +164,13 @@ struct SWInfoButton: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: InfoButton, context: Context) {
+        if nsView.content != content {
+            nsView.popover = nil
+            nsView.content = content
+        }
         nsView.showOnHover = showOnHover
         nsView.fillMode = fillMode
         nsView.animatePopover = animatePopover
-        nsView.content = content
         nsView.primaryColor = primaryColor
         nsView.preferredEdge = preferredEdge
     }
