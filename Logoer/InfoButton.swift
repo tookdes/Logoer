@@ -33,10 +33,10 @@ open class InfoButton: NSControl, NSPopoverDelegate {
                 }
                 if mouseInside {
                     if let parent = self.superview {
-                        popover.show(relativeTo: self.frame, of: parent, preferredEdge: self.preferredEdge)
+                        popover?.show(relativeTo: self.frame, of: parent, preferredEdge: self.preferredEdge)
                     }
                 } else {
-                    popover.close()
+                    popover?.close()
                 }
             }
         }
@@ -102,11 +102,12 @@ open class InfoButton: NSControl, NSPopoverDelegate {
         if popover == nil {
             popover = NSPopover(content: self.content, doesAnimate: self.animatePopover)
         }
-        if popover!.isShown {
-            popover!.close()
+        guard let popover else { return }
+        if popover.isShown {
+            popover.close()
         } else {
             if let parent = self.superview {
-                popover!.show(relativeTo: self.frame, of: parent, preferredEdge: self.preferredEdge)
+                popover.show(relativeTo: self.frame, of: parent, preferredEdge: self.preferredEdge)
             }
         }
     }

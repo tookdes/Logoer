@@ -29,12 +29,10 @@ func getPowerColor(_ level: Int) -> String {
 }
 
 func getPowerState() -> iBattery {
-    if deviceType.lowercased().contains("book") {
-        let internalFinder = InternalFinder()
-        if let internalBattery = internalFinder.getInternalBattery() {
-            if let level = internalBattery.charge {
-                return iBattery(hasBattery: true, isCharging: internalBattery.isCharging ?? false, isCharged: internalBattery.isCharged ?? false, acPowered: internalBattery.acPowered ?? false, batteryLevel: Int(level), levelColor: getPowerColor(Int(level)))
-            }
+    let internalFinder = InternalFinder()
+    if let internalBattery = internalFinder.getInternalBattery() {
+        if let level = internalBattery.charge {
+            return iBattery(hasBattery: true, isCharging: internalBattery.isCharging ?? false, isCharged: internalBattery.isCharged ?? false, acPowered: internalBattery.acPowered ?? false, batteryLevel: Int(level), levelColor: getPowerColor(Int(level)))
         }
     }
     return iBattery(hasBattery: false, isCharging: false, isCharged: false, acPowered: false, batteryLevel: 0, levelColor: "my_gray")
@@ -50,7 +48,8 @@ class InternalBattery {
     var charge: Double? {
         get {
             if let current = self.currentCapacity,
-               let max = self.maxCapacity {
+               let max = self.maxCapacity,
+               max > 0 {
                 return (Double(current) / Double(max)) * 100.0
             }
             return nil

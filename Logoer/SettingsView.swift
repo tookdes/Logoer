@@ -29,13 +29,13 @@ struct SettingsView: View {
                 Spacer()
                 Toggle("Launch at Login", isOn: $launchAtLogin)
                     .toggleStyle(.switch)
-                    .onChange(of: launchAtLogin) { _, newValue in
+                    .onChange(of: launchAtLogin) { newValue in
                         SMLoginItemSetEnabled("com.lihaoyun6.LogoerHelper" as CFString, newValue)
                     }
                 Spacer()
                 Toggle("Always on Screen", isOn: $pinOnScreen)
                     .toggleStyle(.switch)
-                    .onChange(of: pinOnScreen) { _, _ in createLogo() }
+                    .onChange(of: pinOnScreen) { _ in createLogo() }
                 Spacer()
             }
             Divider()
@@ -51,7 +51,7 @@ struct SettingsView: View {
                     Text("*Custom Emoji").tag("emoji")
                     Text("*Custom Image").tag("custom")
                 }
-                .onChange(of: logoStyle) { _, _ in createLogo() }
+                .onChange(of: logoStyle) { _ in createLogo() }
                 if logoStyle == "color" {
                     ColorPicker("", selection: $userColor)
                 } else if logoStyle == "battery" {
@@ -66,7 +66,7 @@ struct SettingsView: View {
                     Button("Random") { userEmoji = randomEmoji(full: maskMode) }
                     TextField("", text: $userEmoji)
                         .frame(width: 30)
-                        .onChange(of: userEmoji) { _, newValue in
+                        .onChange(of: userEmoji) { newValue in
                             if newValue.count > 1 { userEmoji = String(newValue.first ?? "🍎") }
                             createLogo()
                         }
@@ -76,12 +76,18 @@ struct SettingsView: View {
                             switch result {
                             case .success(let file):
                                 let url = file.absoluteURL
-                                guard url.startAccessingSecurityScopedResource() else { return }
-                                defer { url.stopAccessingSecurityScopedResource() }
+                                let securityScoped = url.startAccessingSecurityScopedResource()
+                                defer {
+                                    if securityScoped {
+                                        url.stopAccessingSecurityScopedResource()
+                                    }
+                                }
                                 let fileManager = FileManager.default
-                                let sandboxURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-                                let destinationURL = sandboxURL.appendingPathComponent("user.\(url.pathExtension)")
+                                let sandboxURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? fileManager.temporaryDirectory
+                                let logoerURL = sandboxURL.appendingPathComponent("com.lihaoyun6.Logoer", isDirectory: true)
                                 do {
+                                    try fileManager.createDirectory(at: logoerURL, withIntermediateDirectories: true)
+                                    let destinationURL = logoerURL.appendingPathComponent("user.\(url.pathExtension)")
                                     if fileManager.fileExists(atPath: destinationURL.path) {
                                         try fileManager.removeItem(at: destinationURL)
                                     }
@@ -104,7 +110,7 @@ struct SettingsView: View {
                 HStack(spacing: 2) {
                     Toggle("Auto-Mask", isOn: $maskMode)
                         .toggleStyle(.checkbox)
-                        .onChange(of: maskMode) { _, newValue in if newValue { refeshMask() }}
+                        .onChange(of: maskMode) { newValue in if newValue { refeshMask() }}
                     SWInfoButton(showOnHover: false, fillMode: true, animatePopover: true, content: "Automatically capture the color of the menu bar and cover the system default Logo.".local, primaryColor: NSColor.controlAccentColor)
                         .frame(width: 19, height: 19)
                 }
@@ -112,7 +118,7 @@ struct SettingsView: View {
                     Text("Refresh the mask every")
                         .foregroundColor(maskMode ? .primary : .secondary.opacity(0.5))
                     TextField("", value: $maskInterval, formatter: NumberFormatter())
-                        .onChange(of: maskInterval) { _, newValue in if newValue < 1 { maskInterval = 1 }}
+                        .onChange(of: maskInterval) { newValue in if newValue < 1 { maskInterval = 1 }}
                         .disabled(!maskMode)
                         .frame(width: 25)
                     Text("s")
@@ -167,7 +173,7 @@ extension Color {
     }
 }
 
-extension Color: @retroactive RawRepresentable {
+extension Color: RawRepresentable {
     public typealias RawValue = String
 
     public init?(rawValue: String) {

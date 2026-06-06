@@ -216,7 +216,7 @@ struct ContentView: View {
                     .needOffset(x: -0.5, y: -0.5)
                     .shadow(color: Color.black.opacity(shadowON ? 0.3 : 0.0), radius: 1.5, y: 1.5)
                     .onAppear { loadCustomImage() }
-                    .onChange(of: userImage) { _, _ in loadCustomImage() }
+                    .onChange(of: userImage) { _ in loadCustomImage() }
                 } else {
                     Image(logoStyle + (aboveSonoma ? "" : "_old"))
                         .interpolation(.high)

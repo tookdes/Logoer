@@ -11,13 +11,17 @@ import CoreGraphics
 import SDWebImageSwiftUI
 
 let ud = UserDefaults.standard
-var deviceType = "Mac"
 var maskLockTime: Date?
 var aboveSonoma = false
 var aboveSequoia = false
 var dataModel = DataModel()
 var updaterController: SPUStandardUpdaterController!
 var logoWindows = [NSWindow]()
+private var maskRefreshGeneration = 0
+
+private func normalizedMaskInterval(_ interval: Int) -> TimeInterval {
+    return TimeInterval(max(interval, 1))
+}
 
 @main
 struct LogoerApp: App {
@@ -41,44 +45,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var maskTimer: Timer?
     private var screenTimer: Timer?
     private var batteryTimer: Timer?
+    private var userDefaultsObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        maskTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(maskInterval), repeats: true) { [weak self] _ in
-            guard let self else { return }
-            DispatchQueue.main.async {
-                if let lockTime = maskLockTime, Date().timeIntervalSince(lockTime) >= TimeInterval(self.maskInterval) {
-                    maskLockTime = nil
-                }
-                if maskLockTime == nil { refeshMask() }
-            }
-        }
-
+        dataModel.battery = getPowerState()
+        startMaskTimer()
         screenTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            DispatchQueue.main.async { getFullScreens() }
+            getFullScreens()
         }
 
         batteryTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
-            DispatchQueue.main.async { dataModel.battery = getPowerState() }
+            dataModel.battery = getPowerState()
         }
 
-        NotificationCenter.default.addObserver(
+        userDefaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            self.maskTimer?.invalidate()
-            self.maskTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(self.maskInterval), repeats: true) { [weak self] _ in
-                guard let self else { return }
-                DispatchQueue.main.async {
-                    if let lockTime = maskLockTime, Date().timeIntervalSince(lockTime) >= TimeInterval(self.maskInterval) {
-                        maskLockTime = nil
-                    }
-                    if maskLockTime == nil { refeshMask() }
-                }
-            }
+            self.startMaskTimer()
         }
 
-        deviceType = getMacDeviceType()
         if #available(macOS 14, *) { aboveSonoma = true }
         if #available(macOS 15, *) { aboveSequoia = true }
         refeshMask()
@@ -94,7 +81,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         maskTimer?.invalidate()
         screenTimer?.invalidate()
         batteryTimer?.invalidate()
+        if let userDefaultsObserver {
+            NotificationCenter.default.removeObserver(userDefaultsObserver)
+        }
         CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, nil)
+        NSWorkspace.shared.notificationCenter.removeObserver(self, name: NSWorkspace.screensDidWakeNotification, object: nil)
         NSWorkspace.shared.notificationCenter.removeObserver(self, name: NSWorkspace.didActivateApplicationNotification, object: nil)
         cleanMaskFiles()
     }
@@ -125,6 +116,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             createLogo()
         }
     }
+
+    private func startMaskTimer() {
+        maskTimer?.invalidate()
+        let interval = normalizedMaskInterval(maskInterval)
+        maskTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            if let lockTime = maskLockTime, Date().timeIntervalSince(lockTime) >= interval {
+                maskLockTime = nil
+            }
+            if maskLockTime == nil { refeshMask() }
+        }
+    }
 }
 
 func getIcon(app: NSRunningApplication?) -> NSImage {
@@ -147,12 +149,24 @@ func displayReconfigurationCallback(display: CGDirectDisplayID, flags: CGDisplay
 }
 
 func refeshMask() {
+    if !Thread.isMainThread {
+        DispatchQueue.main.async { refeshMask() }
+        return
+    }
+
+    maskRefreshGeneration += 1
+    let generation = maskRefreshGeneration
+
     @AppStorage("maskMode") var maskMode: Bool = false
-    if !maskMode { return }
+    if !maskMode {
+        dataModel.masks = []
+        return
+    }
 
     if #available(macOS 10.15, *) {
         if !CGPreflightScreenCaptureAccess() {
             print("Screen recording permission not granted")
+            dataModel.masks = []
             return
         }
     }
@@ -167,7 +181,10 @@ func refeshMask() {
             _ = process(path: "/usr/sbin/screencapture", arguments: ["-x", "-R", "\(origins[index].x),\(origins[index].y),4,4", urls[index].path])
             if let image = NSImage(contentsOf: urls[index]) { masks.append(maskImage(url: urls[index], image: image)) }
         }
-        DispatchQueue.main.async { dataModel.masks = masks }
+        DispatchQueue.main.async {
+            guard generation == maskRefreshGeneration else { return }
+            dataModel.masks = masks
+        }
     }
 }
 
@@ -235,7 +252,7 @@ func getFullScreens() {
             }
         }
     }
-    if screenList.count != dataModel.fullScreens.count {
+    if screenList != dataModel.fullScreens {
         if screenList.count < dataModel.fullScreens.count {
             maskLockTime = Date()
             refeshMask()
@@ -273,14 +290,14 @@ func getOrigin(of screen: NSScreen, in screens: [NSScreen]) -> NSPoint {
 }
 
 func getMaskURL(index: Int) -> URL {
-    let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)!
+    let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
     let logoerCache = cacheDir.appendingPathComponent("com.lihaoyun6.Logoer", isDirectory: true)
     try? FileManager.default.createDirectory(at: logoerCache, withIntermediateDirectories: true)
     return logoerCache.appendingPathComponent("mask\(index).png")
 }
 
 func cleanMaskFiles() {
-    let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)!
+    let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
     let logoerCache = cacheDir.appendingPathComponent("com.lihaoyun6.Logoer", isDirectory: true)
     for i in 0..<8 {
         let url = logoerCache.appendingPathComponent("mask\(i).png")
@@ -306,17 +323,6 @@ func createAlert(level: NSAlert.Style = .warning, title: String, message: String
     if button2 != "" { alert.addButton(withTitle: button2.local) }
     alert.alertStyle = level
     return alert
-}
-
-func getMacDeviceType() -> String {
-    guard let result = process(path: "/usr/sbin/system_profiler", arguments: ["SPHardwareDataType", "-json"]) else { return "Mac" }
-    if let json = try? JSONSerialization.jsonObject(with: Data(result.utf8), options: []) as? [String: Any],
-       let SPHardwareDataTypeRaw = json["SPHardwareDataType"] as? [Any],
-       let SPHardwareDataType = SPHardwareDataTypeRaw[0] as? [String: Any],
-       let model = SPHardwareDataType["machine_name"] as? String{
-        return model
-    }
-    return "Mac"
 }
 
 fileprivate func process(path: String, arguments: [String], timeout: Double = 0) -> String? {
